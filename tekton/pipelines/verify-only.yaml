@@ -1,0 +1,112 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: agent-card-verify-only
+  labels:
+    app.kubernetes.io/version: "0.1.0"
+  annotations:
+    tekton.dev/displayName: "Verify Agent Card"
+    tekton.dev/description: |
+      Verification-only pipeline for validating signed Agent Cards
+      against trust policies before deployment.
+spec:
+  description: >-
+    Verify a signed A2A Agent Card meets your organization's
+    trust policy before allowing it to run.
+  params:
+    - name: signed-card-url
+      type: string
+      description: URL to fetch the signed agent card from
+      default: ""
+    - name: signed-card-path
+      type: string
+      description: Local path to signed agent card (alternative to URL)
+      default: "agent-card.signed.json"
+    - name: identity-provider
+      type: string
+      description: Required OIDC issuer
+    - name: expected-identity
+      type: string
+      description: Required signer identity
+      default: ""
+    - name: expected-repository
+      type: string
+      description: Required source repository
+      default: ""
+    - name: expected-workflow
+      type: string
+      description: Required CI workflow
+      default: ""
+    - name: staging
+      type: string
+      description: Use Sigstore staging environment
+      default: "false"
+
+  workspaces:
+    - name: shared-workspace
+      description: Workspace for agent card
+
+  tasks:
+    - name: fetch-agent-card
+      when:
+        - input: $(params.signed-card-url)
+          operator: notin
+          values: [""]
+      taskSpec:
+        params:
+          - name: url
+            type: string
+        workspaces:
+          - name: output
+        results:
+          - name: card-path
+        steps:
+          - name: fetch
+            image: curlimages/curl:latest
+            script: |
+              #!/bin/sh
+              set -e
+              echo "Fetching agent card from: $(params.url)"
+              curl -sSL "$(params.url)" -o $(workspaces.output.path)/fetched-card.signed.json
+              echo -n "fetched-card.signed.json" > $(results.card-path.path)
+              echo "Agent card fetched successfully"
+      params:
+        - name: url
+          value: $(params.signed-card-url)
+      workspaces:
+        - name: output
+          workspace: shared-workspace
+
+    - name: verify-agent-card
+      taskRef:
+        name: verify-agent-card
+      runAfter:
+        - fetch-agent-card
+      params:
+        - name: signed-card-path
+          value: $(params.signed-card-path)
+        - name: identity-provider
+          value: $(params.identity-provider)
+        - name: expected-identity
+          value: $(params.expected-identity)
+        - name: expected-repository
+          value: $(params.expected-repository)
+        - name: expected-workflow
+          value: $(params.expected-workflow)
+        - name: staging
+          value: $(params.staging)
+        - name: fail-on-invalid
+          value: "true"
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+
+  results:
+    - name: verification-status
+      value: $(tasks.verify-agent-card.results.verification-status)
+    - name: agent-name
+      value: $(tasks.verify-agent-card.results.agent-name)
+    - name: agent-version
+      value: $(tasks.verify-agent-card.results.agent-version)
+    - name: signer-identity
+      value: $(tasks.verify-agent-card.results.signer-identity)

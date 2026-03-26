@@ -1,0 +1,191 @@
+{
+  "agentCard": {
+    "name": "Weather Agent",
+    "description": "A Kubernetes-deployed weather agent that provides real-time weather data, forecasts, and climate analysis. Inspired by the Kagenti operator demo.",
+    "version": "1.0.0",
+    "url": "http://weather-agent.agents.svc.cluster.local:8080",
+    "provider": {
+      "organization": "Kagenti",
+      "url": "https://github.com/kagenti/kagenti-operator"
+    },
+    "capabilities": {
+      "streaming": true,
+      "pushNotifications": false
+    },
+    "supportsAuthenticatedExtendedCard": true,
+    "defaultInputModes": [
+      "text/plain",
+      "application/json"
+    ],
+    "defaultOutputModes": [
+      "text/plain",
+      "application/json"
+    ],
+    "skills": [
+      {
+        "id": "get-current-weather",
+        "name": "Get Current Weather",
+        "description": "Retrieves current weather conditions for a specified location",
+        "tags": [
+          "weather",
+          "current",
+          "conditions"
+        ],
+        "examples": [
+          "What's the weather in San Francisco?",
+          "Get current temperature in Tokyo",
+          "Is it raining in London right now?"
+        ],
+        "inputModes": [
+          "text/plain",
+          "application/json"
+        ],
+        "outputModes": [
+          "application/json",
+          "text/plain"
+        ],
+        "parameters": [
+          {
+            "name": "location",
+            "type": "string",
+            "description": "City name or coordinates (lat,lon)",
+            "required": true
+          },
+          {
+            "name": "units",
+            "type": "string",
+            "description": "Temperature units: celsius, fahrenheit, or kelvin",
+            "required": false,
+            "default": "celsius"
+          }
+        ]
+      },
+      {
+        "id": "get-forecast",
+        "name": "Get Weather Forecast",
+        "description": "Provides weather forecast for the next 7 days",
+        "tags": [
+          "weather",
+          "forecast",
+          "prediction"
+        ],
+        "examples": [
+          "What's the forecast for New York this week?",
+          "Will it rain in Paris tomorrow?",
+          "5-day forecast for Seattle"
+        ],
+        "inputModes": [
+          "text/plain",
+          "application/json"
+        ],
+        "outputModes": [
+          "application/json",
+          "text/plain"
+        ],
+        "parameters": [
+          {
+            "name": "location",
+            "type": "string",
+            "description": "City name or coordinates",
+            "required": true
+          },
+          {
+            "name": "days",
+            "type": "integer",
+            "description": "Number of forecast days (1-7)",
+            "required": false,
+            "default": 7
+          }
+        ]
+      },
+      {
+        "id": "weather-alerts",
+        "name": "Weather Alerts",
+        "description": "Get active weather alerts and warnings for a region",
+        "tags": [
+          "weather",
+          "alerts",
+          "warnings",
+          "safety"
+        ],
+        "examples": [
+          "Are there any weather alerts in Florida?",
+          "Storm warnings for the Bay Area"
+        ],
+        "inputModes": [
+          "text/plain"
+        ],
+        "outputModes": [
+          "application/json",
+          "text/plain"
+        ],
+        "parameters": [
+          {
+            "name": "region",
+            "type": "string",
+            "description": "Region or state for alert lookup",
+            "required": true
+          }
+        ]
+      }
+    ]
+  },
+  "attestations": {
+    "signatureBundle": {
+      "mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json",
+      "verificationMaterial": {
+        "certificate": {
+          "rawBytes": "MIIC1DCCAlqgAwIBAgIUWCX+LNAd+l4kTG+mrB1yXPa5fbswCgYIKoZIzj0EAwMwNzEVMBMGA1UEChMMc2lnc3RvcmUuZGV2MR4wHAYDVQQDExVzaWdzdG9yZS1pbnRlcm1lZGlhdGUwHhcNMjYwMzI1MTcyMjUyWhcNMjYwMzI1MTczMjUyWjAAMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEGRbE9jrDAh2uDTOKwQ5iwLb0EC3p6wDPKzjBO4E/QSy8gcxYCuebiszai7Uy8xQ5J9NHSDIY+3RbbdNeKS2NzaOCAXkwggF1MA4GA1UdDwEB/wQEAwIHgDATBgNVHSUEDDAKBggrBgEFBQcDAzAdBgNVHQ4EFgQU3nG4Kj2WT8BaETUdYE6DY5BVurAwHwYDVR0jBBgwFoAUcYYwphR8Ym/599b0BRp/X//rb6wwIgYDVR0RAQH/BBgwFoEUZGVhbm9rMTAwMEBnbWFpbC5jb20wLAYKKwYBBAGDvzABAQQeaHR0cHM6Ly9naXRodWIuY29tL2xvZ2luL29hdXRoMC4GCisGAQQBg78wAQgEIAweaHR0cHM6Ly9naXRodWIuY29tL2xvZ2luL29hdXRoMIGLBgorBgEEAdZ5AgQCBH0EewB5AHcAKzC83GiIyeLh2CYpXnQfSDkxlgLynDPLXkNA/rKshnoAAAGdJgVERQAABAMASDBGAiEA+1XZ+gG7CLRB1XdhL9SqWQdXIuKD+ihhZwMAbqrIVrsCIQDdNqL33jKI8FnfBCe/bTVbwNpg46QeM2Sgw+pgQSnbcjAKBggqhkjOPQQDAwNoADBlAjBZhR1VXhppA8KaKXa3ahH4IYYgmj4kCdQGZsy1Mbl5PJif0uJhI4CAZdhdVe7Q5eoCMQCpo+FJpEue9IGJoP13Ocq1o86kXIYlWTsfkqQilodq3qY4q+ncqXGu/ZRJOZ21Vug="
+        },
+        "tlogEntries": [
+          {
+            "logIndex": "3197256",
+            "logId": {
+              "keyId": "09OnDKEw7/hpZiYVPoTRzRbglHk0sylsUovegnRUlJY="
+            },
+            "kindVersion": {
+              "kind": "dsse",
+              "version": "0.0.2"
+            },
+            "integratedTime": "0",
+            "inclusionProof": {
+              "logIndex": "3197256",
+              "rootHash": "YbBOtBnfAnWmlLiGUB4u2ibf1VAj3d2bClmDcFYwfmE=",
+              "treeSize": "3197257",
+              "hashes": [
+                "m8xhTwRbuE51+/bZDxUz9uB9PEbDZoGROVn4sWH+mws=",
+                "tkYXn/bKFWmOqzpJ/AlSnHWjsbAMDV5eWv3ZvqRObw0=",
+                "i9EhKyioAXsUN/UQ9JaplFqIQ0xD2TkxdGrlfWCMp1Q=",
+                "NJCvskc4RxPyY0rPT3IN1UabtsVfCim2jIMz8a44Q0o=",
+                "p51NhPepJSpxl5L+byXGTcYVoX1YtFJX2ISZTaEHqhg=",
+                "r9rRXvxMsQUufrVmk28UV2KP1XIChVmwsn7rsXpCjXM=",
+                "CZJWJtYZFYWwC+DsEiCMnWled/ED66viI0Wz/L+9vxk=",
+                "Y8Q9QaTpqRAlSoWnNwyYGDerVLL1f6b8osmbDYEF6og="
+              ],
+              "checkpoint": {
+                "envelope": "log2025-alpha3.rekor.sigstage.dev\n3197257\nYbBOtBnfAnWmlLiGUB4u2ibf1VAj3d2bClmDcFYwfmE=\n\n— log2025-alpha3.rekor.sigstage.dev 09OnDHTu7YSJJ97uSXy74LAI/nXL9VjJo55f/bSSGNbeFC0LtlyFkEPXA3IhaVQIiYSPK9kcYqIUk/hnN/iFTxKbCw4=\n— witness.navigli.sunlight.geomys.org o+AP4gAAAABpxBnumHyYIUos9ktUZ/4LLn70drxOL2z3W4f5zx/Ym37EHDo9hP5fGy0Q7As04JFGzAFxXnl4bPYMnEmQMVS23Tw5Bw==\n— witness.stagemole.eu Z/euoAAAAABpxBnugrEli58/0drnf8bl88gNdOuv3aQggZQkBl4gwsUzm3YbsxrO6x06jdhlXtXTn74XzvXodNdK89S6n4KIlwHjBw==\n— staging.witness.transparency.goog/ring-any-bells LhqNyQAAAABpxBnuQn90RFozlG3ARBQJDoz5lSoLCkutdtGBr2g2wQ5kXa9DnZS2YOY5PIdP4lnaChGPJjFimg/JJR+W7SiZh1tNBw==\n"
+              }
+            },
+            "canonicalizedBody": "eyJhcGlWZXJzaW9uIjoiMC4wLjIiLCJraW5kIjoiZHNzZSIsInNwZWMiOnsiZHNzZVYwMDIiOnsicGF5bG9hZEhhc2giOnsiYWxnb3JpdGhtIjoiU0hBMl8yNTYiLCJkaWdlc3QiOiIwRGY5cTN5MGswc091a1hUL2ZmVzFWcDBHY01wcWNSbEY5UGJZWmJXemU4PSJ9LCJzaWduYXR1cmVzIjpbeyJjb250ZW50IjoiTUVRQ0lIUzVhVTFRY1Y1NStES3piN2g2UWt6a3JkOXl2ZFJlaWI2aVJzWEt3UUFrQWlBMkZTVzZmWXJXNDVVR051MkRydVdyeTVrb2ZVdnFBNDVrQUJCZVVBOGFZZz09IiwidmVyaWZpZXIiOnsia2V5RGV0YWlscyI6IlBLSVhfRUNEU0FfUDI1Nl9TSEFfMjU2IiwieDUwOUNlcnRpZmljYXRlIjp7InJhd0J5dGVzIjoiTUlJQzFEQ0NBbHFnQXdJQkFnSVVXQ1grTE5BZCtsNGtURyttckIxeVhQYTVmYnN3Q2dZSUtvWkl6ajBFQXdNd056RVZNQk1HQTFVRUNoTU1jMmxuYzNSdmNtVXVaR1YyTVI0d0hBWURWUVFERXhWemFXZHpkRzl5WlMxcGJuUmxjbTFsWkdsaGRHVXdIaGNOTWpZd016STFNVGN5TWpVeVdoY05Nall3TXpJMU1UY3pNalV5V2pBQU1Ga3dFd1lIS29aSXpqMENBUVlJS29aSXpqMERBUWNEUWdBRUdSYkU5anJEQWgydURUT0t3UTVpd0xiMEVDM3A2d0RQS3pqQk80RS9RU3k4Z2N4WUN1ZWJpc3phaTdVeTh4UTVKOU5IU0RJWSszUmJiZE5lS1MyTnphT0NBWGt3Z2dGMU1BNEdBMVVkRHdFQi93UUVBd0lIZ0RBVEJnTlZIU1VFRERBS0JnZ3JCZ0VGQlFjREF6QWRCZ05WSFE0RUZnUVUzbkc0S2oyV1Q4QmFFVFVkWUU2RFk1QlZ1ckF3SHdZRFZSMGpCQmd3Rm9BVWNZWXdwaFI4WW0vNTk5YjBCUnAvWC8vcmI2d3dJZ1lEVlIwUkFRSC9CQmd3Rm9FVVpHVmhibTlyTVRBd01FQm5iV0ZwYkM1amIyMHdMQVlLS3dZQkJBR0R2ekFCQVFRZWFIUjBjSE02THk5bmFYUm9kV0l1WTI5dEwyeHZaMmx1TDI5aGRYUm9NQzRHQ2lzR0FRUUJnNzh3QVFnRUlBd2VhSFIwY0hNNkx5OW5hWFJvZFdJdVkyOXRMMnh2WjJsdUwyOWhkWFJvTUlHTEJnb3JCZ0VFQWRaNUFnUUNCSDBFZXdCNUFIY0FLekM4M0dpSXllTGgyQ1lwWG5RZlNEa3hsZ0x5bkRQTFhrTkEvcktzaG5vQUFBR2RKZ1ZFUlFBQUJBTUFTREJHQWlFQSsxWForZ0c3Q0xSQjFYZGhMOVNxV1FkWEl1S0QraWhoWndNQWJxcklWcnNDSVFEZE5xTDMzaktJOEZuZkJDZS9iVFZid05wZzQ2UWVNMlNndytwZ1FTbmJjakFLQmdncWhrak9QUVFEQXdOb0FEQmxBakJaaFIxVlhocHBBOEthS1hhM2FoSDRJWVlnbWo0a0NkUUdac3kxTWJsNVBKaWYwdUpoSTRDQVpkaGRWZTdRNWVvQ01RQ3BvK0ZKcEV1ZTlJR0pvUDEzT2NxMW84NmtYSVlsV1RzZmtxUWlsb2RxM3FZNHErbmNxWEd1L1pSSk9aMjFWdWc9In19fV19fX0="
+          }
+        ],
+        "timestampVerificationData": {
+          "rfc3161Timestamps": [
+            {
+              "signedTimestamp": "MIIE6jADAgEAMIIE4QYJKoZIhvcNAQcCoIIE0jCCBM4CAQMxDTALBglghkgBZQMEAgEwgcIGCyqGSIb3DQEJEAEEoIGyBIGvMIGsAgEBBgkrBgEEAYO/MAIwMTANBglghkgBZQMEAgEFAAQgx71U+T15EnSCG5C0xC9egcR1d1bo3yxY3u9BqlVrRPgCFQCaFATyZyj7GCVoHJBXsYIbnpl0exgPMjAyNjAzMjUxNzIyNTJaMAMCAQECCFg+H6aqTqQloDKkMDAuMRUwEwYDVQQKEwxzaWdzdG9yZS5kZXYxFTATBgNVBAMTDHNpZ3N0b3JlLXRzYaCCAhMwggIPMIIBlqADAgECAhQKNaEGYdXiQXPGiZan8n3yfgN8pzAKBggqhkjOPQQDAzA5MRUwEwYDVQQKEwxzaWdzdG9yZS5kZXYxIDAeBgNVBAMTF3NpZ3N0b3JlLXRzYS1zZWxmc2lnbmVkMB4XDTI1MDMyODA5MTQwNloXDTM1MDMyNjA4MTQwNlowLjEVMBMGA1UEChMMc2lnc3RvcmUuZGV2MRUwEwYDVQQDEwxzaWdzdG9yZS10c2EwdjAQBgcqhkjOPQIBBgUrgQQAIgNiAATHW/kXcekP16Ae6SekEWVHPtAFEMm7hp5XO33MktFjSW+bHWUXtYEzZz0A3xkY9CyYOoeUk3ZH/v5HEuS+UvORzX0g7Hfy3uYYYRwHtqBQN0IX8rLdFMtIrRej/QCAdB2jajBoMA4GA1UdDwEB/wQEAwIHgDAdBgNVHQ4EFgQUqPxk9ijeLuY7c09UjFLE4ZzdU6UwHwYDVR0jBBgwFoAUOyBGWV61Mk1HMM5uY+5zdEfyBH0wFgYDVR0lAQH/BAwwCgYIKwYBBQUHAwgwCgYIKoZIzj0EAwMDZwAwZAIwRK9VLoYa0Xff4nX1N/AQ1YleNG/iLT8dAXAtRKRfpN9XuDScbxWeo0cku8SkC06NAjBQPe7LBNeitA/UOBtXT2sX1h6f4ISqz+ISmJ4lY+y3bzRJI5nk1r53I9WT3/xIWToxggHcMIIB2AIBATBRMDkxFTATBgNVBAoTDHNpZ3N0b3JlLmRldjEgMB4GA1UEAxMXc2lnc3RvcmUtdHNhLXNlbGZzaWduZWQCFAo1oQZh1eJBc8aJlqfyffJ+A3ynMAsGCWCGSAFlAwQCAaCB/DAaBgkqhkiG9w0BCQMxDQYLKoZIhvcNAQkQAQQwHAYJKoZIhvcNAQkFMQ8XDTI2MDMyNTE3MjI1MlowLwYJKoZIhvcNAQkEMSIEIGrHzgqxTDyH5aQPZy72hZdXnT+db+2z2IueXu2xSetOMIGOBgsqhkiG9w0BCRACLzF/MH0wezB5BCAG9P/gR/6zWZm3M7DXoyNQHPwY5MAzZqhF13U250snRDBVMD2kOzA5MRUwEwYDVQQKEwxzaWdzdG9yZS5kZXYxIDAeBgNVBAMTF3NpZ3N0b3JlLXRzYS1zZWxmc2lnbmVkAhQKNaEGYdXiQXPGiZan8n3yfgN8pzAKBggqhkjOPQQDAgRoMGYCMQDe8o4pcaxvtzVCIpGat0s+P9H6475NRF8BTYRObBShhCoQUkK0z8abQFJsLYLh5S4CMQDajQqjMr075zYKy9oZgQ+aYL1uZTGnq3vTG2BGAktHbPVkMi1/Xv840TRrkEqE/qM="
+            }
+          ]
+        }
+      },
+      "dsseEnvelope": {
+        "payload": "eyJfdHlwZSI6Imh0dHBzOi8vaW4tdG90by5pby9TdGF0ZW1lbnQvdjEiLCJzdWJqZWN0IjpbeyJuYW1lIjoiV2VhdGhlciBBZ2VudCIsImRpZ2VzdCI6eyJzaGEyNTYiOiJhMGRjMGYzYTJjZjE1MzgwMzA5YzM2NTM2NzY1N2E2ZGYzOTUwNzQzNzkxMDE4Y2I0N2FkOTczYTlmNWRmZmMxIn19XSwicHJlZGljYXRlVHlwZSI6Imh0dHBzOi8vYTJhLm9wZW53YWxsZXQuZGV2L2FnZW50Y2FyZC92MSIsInByZWRpY2F0ZSI6eyJuYW1lIjoiV2VhdGhlciBBZ2VudCIsImRlc2NyaXB0aW9uIjoiQSBLdWJlcm5ldGVzLWRlcGxveWVkIHdlYXRoZXIgYWdlbnQgdGhhdCBwcm92aWRlcyByZWFsLXRpbWUgd2VhdGhlciBkYXRhLCBmb3JlY2FzdHMsIGFuZCBjbGltYXRlIGFuYWx5c2lzLiBJbnNwaXJlZCBieSB0aGUgS2FnZW50aSBvcGVyYXRvciBkZW1vLiIsInZlcnNpb24iOiIxLjAuMCIsInVybCI6Imh0dHA6Ly93ZWF0aGVyLWFnZW50LmFnZW50cy5zdmMuY2x1c3Rlci5sb2NhbDo4MDgwIiwicHJvdmlkZXIiOnsib3JnYW5pemF0aW9uIjoiS2FnZW50aSIsInVybCI6Imh0dHBzOi8vZ2l0aHViLmNvbS9rYWdlbnRpL2thZ2VudGktb3BlcmF0b3IifSwiY2FwYWJpbGl0aWVzIjp7InN0cmVhbWluZyI6dHJ1ZSwicHVzaE5vdGlmaWNhdGlvbnMiOmZhbHNlfSwic3VwcG9ydHNBdXRoZW50aWNhdGVkRXh0ZW5kZWRDYXJkIjp0cnVlLCJkZWZhdWx0SW5wdXRNb2RlcyI6WyJ0ZXh0L3BsYWluIiwiYXBwbGljYXRpb24vanNvbiJdLCJkZWZhdWx0T3V0cHV0TW9kZXMiOlsidGV4dC9wbGFpbiIsImFwcGxpY2F0aW9uL2pzb24iXSwic2tpbGxzIjpbeyJpZCI6ImdldC1jdXJyZW50LXdlYXRoZXIiLCJuYW1lIjoiR2V0IEN1cnJlbnQgV2VhdGhlciIsImRlc2NyaXB0aW9uIjoiUmV0cmlldmVzIGN1cnJlbnQgd2VhdGhlciBjb25kaXRpb25zIGZvciBhIHNwZWNpZmllZCBsb2NhdGlvbiIsInRhZ3MiOlsid2VhdGhlciIsImN1cnJlbnQiLCJjb25kaXRpb25zIl0sImV4YW1wbGVzIjpbIldoYXQncyB0aGUgd2VhdGhlciBpbiBTYW4gRnJhbmNpc2NvPyIsIkdldCBjdXJyZW50IHRlbXBlcmF0dXJlIGluIFRva3lvIiwiSXMgaXQgcmFpbmluZyBpbiBMb25kb24gcmlnaHQgbm93PyJdLCJpbnB1dE1vZGVzIjpbInRleHQvcGxhaW4iLCJhcHBsaWNhdGlvbi9qc29uIl0sIm91dHB1dE1vZGVzIjpbImFwcGxpY2F0aW9uL2pzb24iLCJ0ZXh0L3BsYWluIl0sInBhcmFtZXRlcnMiOlt7Im5hbWUiOiJsb2NhdGlvbiIsInR5cGUiOiJzdHJpbmciLCJkZXNjcmlwdGlvbiI6IkNpdHkgbmFtZSBvciBjb29yZGluYXRlcyAobGF0LGxvbikiLCJyZXF1aXJlZCI6dHJ1ZX0seyJuYW1lIjoidW5pdHMiLCJ0eXBlIjoic3RyaW5nIiwiZGVzY3JpcHRpb24iOiJUZW1wZXJhdHVyZSB1bml0czogY2Vsc2l1cywgZmFocmVuaGVpdCwgb3Iga2VsdmluIiwicmVxdWlyZWQiOmZhbHNlLCJkZWZhdWx0IjoiY2Vsc2l1cyJ9XX0seyJpZCI6ImdldC1mb3JlY2FzdCIsIm5hbWUiOiJHZXQgV2VhdGhlciBGb3JlY2FzdCIsImRlc2NyaXB0aW9uIjoiUHJvdmlkZXMgd2VhdGhlciBmb3JlY2FzdCBmb3IgdGhlIG5leHQgNyBkYXlzIiwidGFncyI6WyJ3ZWF0aGVyIiwiZm9yZWNhc3QiLCJwcmVkaWN0aW9uIl0sImV4YW1wbGVzIjpbIldoYXQncyB0aGUgZm9yZWNhc3QgZm9yIE5ldyBZb3JrIHRoaXMgd2Vlaz8iLCJXaWxsIGl0IHJhaW4gaW4gUGFyaXMgdG9tb3Jyb3c/IiwiNS1kYXkgZm9yZWNhc3QgZm9yIFNlYXR0bGUiXSwiaW5wdXRNb2RlcyI6WyJ0ZXh0L3BsYWluIiwiYXBwbGljYXRpb24vanNvbiJdLCJvdXRwdXRNb2RlcyI6WyJhcHBsaWNhdGlvbi9qc29uIiwidGV4dC9wbGFpbiJdLCJwYXJhbWV0ZXJzIjpbeyJuYW1lIjoibG9jYXRpb24iLCJ0eXBlIjoic3RyaW5nIiwiZGVzY3JpcHRpb24iOiJDaXR5IG5hbWUgb3IgY29vcmRpbmF0ZXMiLCJyZXF1aXJlZCI6dHJ1ZX0seyJuYW1lIjoiZGF5cyIsInR5cGUiOiJpbnRlZ2VyIiwiZGVzY3JpcHRpb24iOiJOdW1iZXIgb2YgZm9yZWNhc3QgZGF5cyAoMS03KSIsInJlcXVpcmVkIjpmYWxzZSwiZGVmYXVsdCI6N31dfSx7ImlkIjoid2VhdGhlci1hbGVydHMiLCJuYW1lIjoiV2VhdGhlciBBbGVydHMiLCJkZXNjcmlwdGlvbiI6IkdldCBhY3RpdmUgd2VhdGhlciBhbGVydHMgYW5kIHdhcm5pbmdzIGZvciBhIHJlZ2lvbiIsInRhZ3MiOlsid2VhdGhlciIsImFsZXJ0cyIsIndhcm5pbmdzIiwic2FmZXR5Il0sImV4YW1wbGVzIjpbIkFyZSB0aGVyZSBhbnkgd2VhdGhlciBhbGVydHMgaW4gRmxvcmlkYT8iLCJTdG9ybSB3YXJuaW5ncyBmb3IgdGhlIEJheSBBcmVhIl0sImlucHV0TW9kZXMiOlsidGV4dC9wbGFpbiJdLCJvdXRwdXRNb2RlcyI6WyJhcHBsaWNhdGlvbi9qc29uIiwidGV4dC9wbGFpbiJdLCJwYXJhbWV0ZXJzIjpbeyJuYW1lIjoicmVnaW9uIiwidHlwZSI6InN0cmluZyIsImRlc2NyaXB0aW9uIjoiUmVnaW9uIG9yIHN0YXRlIGZvciBhbGVydCBsb29rdXAiLCJyZXF1aXJlZCI6dHJ1ZX1dfV19fQ==",
+        "payloadType": "application/vnd.in-toto+json",
+        "signatures": [
+          {
+            "sig": "MEQCIHS5aU1QcV55+DKzb7h6Qkzkrd9yvdReib6iRsXKwQAkAiA2FSW6fYrW45UGNu2DruWry5kofUvqA45kABBeUA8aYg=="
+          }
+        ]
+      }
+    }
+  }
+}

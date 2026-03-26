@@ -1,0 +1,164 @@
+# Sign A2A Agent Card with Sigstore
+#
+# This workflow demonstrates keyless signing of A2A Agent Cards
+# using GitHub Actions OIDC tokens.
+
+name: Sign Agent Card
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'demo/weather-agent-card.json'
+      - '.github/workflows/sign-agent-card.yml'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      agent_card:
+        description: 'Path to agent card to sign'
+        required: false
+        default: 'demo/weather-agent-card.json'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  sign-agent-card:
+    name: Sign Agent Card
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install UV
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        run: uv sync --prerelease=allow
+
+      - name: Get GitHub OIDC Token
+        id: oidc
+        run: |
+          # Request OIDC token from GitHub with 'sigstore' audience
+          OIDC_TOKEN=$(curl -sLS "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sigstore" \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" | jq -r '.value')
+          
+          # Save to file (don't echo the token!)
+          echo "$OIDC_TOKEN" > oidc-token.txt
+          echo "OIDC token obtained successfully"
+
+      - name: Sign Agent Card
+        env:
+          AGENT_CARD: ${{ github.event.inputs.agent_card || 'demo/weather-agent-card.json' }}
+        run: |
+          echo "=== Signing Agent Card ==="
+          echo "Input: $AGENT_CARD"
+          echo "Repository: ${{ github.repository }}"
+          echo "Workflow: ${{ github.workflow }}"
+          
+          uv run sigstore-a2a sign \
+            --output demo/weather-agent-card.signed.json \
+            --repository ${{ github.repository }} \
+            --provenance \
+            --identity_token "$(cat oidc-token.txt)" \
+            "$AGENT_CARD"
+          
+          echo ""
+          echo "=== Signed Agent Card Created ==="
+          ls -la demo/weather-agent-card.signed.json
+
+      - name: Verify Signed Agent Card
+        run: |
+          echo "=== Verifying Signed Agent Card ==="
+          
+          # Verify with YOUR repository's identity
+          uv run sigstore-a2a --verbose verify \
+            --identity_provider "https://token.actions.githubusercontent.com" \
+            --repository "${{ github.repository }}" \
+            --workflow "${{ github.workflow }}" \
+            demo/weather-agent-card.signed.json
+          
+          echo ""
+          echo "=== Verification Successful ==="
+
+      - name: Display Signed Card Info
+        run: |
+          echo "=== Signed Agent Card Summary ==="
+          echo ""
+          echo "Agent Name: $(jq -r '.agentCard.name' demo/weather-agent-card.signed.json)"
+          echo "Agent Version: $(jq -r '.agentCard.version' demo/weather-agent-card.signed.json)"
+          echo "Rekor Log Index: $(jq -r '.attestations.signatureBundle.verificationMaterial.tlogEntries[0].logIndex' demo/weather-agent-card.signed.json)"
+          echo ""
+          echo "Signature bundle size: $(wc -c < demo/weather-agent-card.signed.json) bytes"
+
+      - name: Upload Signed Agent Card
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-weather-agent-card
+          path: demo/weather-agent-card.signed.json
+          retention-days: 30
+
+  # Optional: Deploy to OpenShift
+  # Uncomment and configure if you want automatic deployment
+  #
+  # deploy-to-openshift:
+  #   name: Deploy to OpenShift
+  #   runs-on: ubuntu-latest
+  #   needs: [sign-agent-card]
+  #   if: github.ref == 'refs/heads/main'
+  #   
+  #   steps:
+  #     - name: Download signed card
+  #       uses: actions/download-artifact@v4
+  #       with:
+  #         name: signed-weather-agent-card
+  #
+  #     - name: Install oc CLI
+  #       uses: redhat-actions/oc-installer@v1
+  #
+  #     - name: Login to OpenShift
+  #       uses: redhat-actions/oc-login@v1
+  #       with:
+  #         openshift_server_url: ${{ secrets.OPENSHIFT_SERVER }}
+  #         openshift_token: ${{ secrets.OPENSHIFT_TOKEN }}
+  #
+  #     - name: Update ConfigMap with signed card
+  #       run: |
+  #         oc create configmap signed-agent-card \
+  #           --from-file=agent-card.signed.json=demo/weather-agent-card.signed.json \
+  #           -n sigstore-a2a \
+  #           --dry-run=client -o yaml | oc apply -f -
+  #
+  #     - name: Trigger verification pipeline
+  #       run: |
+  #         cat <<EOF | oc create -f -
+  #         apiVersion: tekton.dev/v1
+  #         kind: PipelineRun
+  #         metadata:
+  #           generateName: verify-from-github-
+  #           namespace: sigstore-a2a
+  #         spec:
+  #           pipelineRef:
+  #             name: agent-card-verify-only
+  #           params:
+  #             - name: signed-card-path
+  #               value: agent-card.signed.json
+  #             - name: identity-provider
+  #               value: "https://token.actions.githubusercontent.com"
+  #             - name: expected-repository
+  #               value: "sigstore-conformance/extremely-dangerous-public-oidc-beacon"
+  #           workspaces:
+  #             - name: shared-workspace
+  #               configMap:
+  #                 name: signed-agent-card
+  #         EOF

@@ -1,0 +1,140 @@
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: agent-card-sign-template
+  annotations:
+    tekton.dev/displayName: "Agent Card Signing Trigger Template"
+spec:
+  params:
+    - name: git-repo-url
+      description: Git repository URL
+    - name: git-revision
+      description: Git revision (branch, tag, or SHA)
+      default: main
+    - name: git-repo-name
+      description: Repository name (owner/repo)
+    - name: agent-card-path
+      description: Path to agent card in repository
+      default: agent-card.json
+  resourcetemplates:
+    - apiVersion: tekton.dev/v1
+      kind: PipelineRun
+      metadata:
+        generateName: agent-card-sign-
+        labels:
+          tekton.dev/pipeline: agent-card-sign-verify-deploy
+          app.kubernetes.io/managed-by: tekton-triggers
+      spec:
+        pipelineRef:
+          name: agent-card-sign-verify-deploy
+        params:
+          - name: agent-card-path
+            value: $(tt.params.agent-card-path)
+          - name: repository
+            value: $(tt.params.git-repo-name)
+          - name: staging
+            value: "false"
+          - name: identity-provider
+            value: "https://token.actions.githubusercontent.com"
+          - name: expected-repository
+            value: $(tt.params.git-repo-name)
+          - name: deploy
+            value: "true"
+          - name: deployment-name
+            value: "$(tt.params.git-repo-name)-agent"
+        workspaces:
+          - name: shared-workspace
+            volumeClaimTemplate:
+              spec:
+                accessModes:
+                  - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: 1Gi
+        taskRunTemplate:
+          podTemplate:
+            securityContext:
+              runAsNonRoot: true
+              runAsUser: 65532
+---
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerBinding
+metadata:
+  name: github-push-binding
+  annotations:
+    tekton.dev/displayName: "GitHub Push Event Binding"
+spec:
+  params:
+    - name: git-repo-url
+      value: $(body.repository.clone_url)
+    - name: git-revision
+      value: $(body.head_commit.id)
+    - name: git-repo-name
+      value: $(body.repository.full_name)
+---
+apiVersion: triggers.tekton.dev/v1beta1
+kind: EventListener
+metadata:
+  name: agent-card-listener
+  annotations:
+    tekton.dev/displayName: "Agent Card Signing Event Listener"
+spec:
+  serviceAccountName: tekton-triggers-sa
+  triggers:
+    - name: github-push
+      interceptors:
+        - ref:
+            name: "github"
+          params:
+            - name: "secretRef"
+              value:
+                secretName: github-webhook-secret
+                secretKey: webhook-secret
+            - name: "eventTypes"
+              value: ["push"]
+        - ref:
+            name: "cel"
+          params:
+            - name: "filter"
+              value: >-
+                body.commits.exists(c, c.modified.exists(f, f.endsWith('agent-card.json')))
+                || body.commits.exists(c, c.added.exists(f, f.endsWith('agent-card.json')))
+            - name: "overlays"
+              value:
+                - key: agent-card-path
+                  expression: >-
+                    body.commits.map(c, c.modified + c.added).flatten().filter(f, f.endsWith('agent-card.json'))[0]
+      bindings:
+        - ref: github-push-binding
+      template:
+        ref: agent-card-sign-template
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tekton-triggers-sa
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tekton-triggers-eventlistener-binding
+subjects:
+  - kind: ServiceAccount
+    name: tekton-triggers-sa
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: tekton-triggers-eventlistener-roles
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: tekton-triggers-eventlistener-clusterbinding
+subjects:
+  - kind: ServiceAccount
+    name: tekton-triggers-sa
+    namespace: default
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: tekton-triggers-eventlistener-clusterroles

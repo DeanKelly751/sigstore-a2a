@@ -1,0 +1,152 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: agent-card-sign-verify-deploy
+  labels:
+    app.kubernetes.io/version: "0.1.0"
+  annotations:
+    tekton.dev/displayName: "Sign, Verify & Deploy Agent Card"
+    tekton.dev/description: |
+      Complete pipeline for A2A Agent Card lifecycle:
+      1. Sign the agent card with Sigstore
+      2. Verify the signature meets trust policy
+      3. Deploy to Kubernetes with A2A discovery endpoints
+spec:
+  description: >-
+    End-to-end pipeline for signing, verifying, and deploying
+    A2A Agent Cards using Sigstore keyless signing.
+  params:
+    - name: agent-card-path
+      type: string
+      description: Path to the unsigned agent card
+      default: "agent-card.json"
+    - name: repository
+      type: string
+      description: Repository to bind signature to
+      default: ""
+    - name: staging
+      type: string
+      description: Use Sigstore staging environment
+      default: "false"
+    - name: identity-provider
+      type: string
+      description: Expected OIDC issuer for verification
+      default: ""
+    - name: expected-repository
+      type: string
+      description: Expected repository for verification
+      default: ""
+    - name: deploy
+      type: string
+      description: Deploy the agent card server (true/false)
+      default: "true"
+    - name: deployment-name
+      type: string
+      description: Name for the deployment
+      default: "agent-card-server"
+    - name: namespace
+      type: string
+      description: Target namespace
+      default: "default"
+
+  workspaces:
+    - name: shared-workspace
+      description: Shared workspace for pipeline artifacts
+
+  tasks:
+    - name: sign-agent-card
+      taskRef:
+        name: sign-agent-card
+      params:
+        - name: agent-card-path
+          value: $(params.agent-card-path)
+        - name: output-path
+          value: agent-card.signed.json
+        - name: repository
+          value: $(params.repository)
+        - name: staging
+          value: $(params.staging)
+        - name: include-provenance
+          value: "true"
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+        - name: output
+          workspace: shared-workspace
+
+    - name: verify-agent-card
+      taskRef:
+        name: verify-agent-card
+      runAfter:
+        - sign-agent-card
+      params:
+        - name: signed-card-path
+          value: agent-card.signed.json
+        - name: staging
+          value: $(params.staging)
+        - name: identity-provider
+          value: $(params.identity-provider)
+        - name: expected-repository
+          value: $(params.expected-repository)
+        - name: fail-on-invalid
+          value: "true"
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+
+    - name: deploy-agent-card
+      taskRef:
+        name: serve-agent-card
+      runAfter:
+        - verify-agent-card
+      when:
+        - input: $(params.deploy)
+          operator: in
+          values: ["true", "yes", "1"]
+      params:
+        - name: signed-card-path
+          value: agent-card.signed.json
+        - name: deployment-name
+          value: $(params.deployment-name)
+        - name: namespace
+          value: $(params.namespace)
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+
+  results:
+    - name: signed-card-digest
+      description: Digest of the signed agent card
+      value: $(tasks.sign-agent-card.results.signed-card-digest)
+    - name: rekor-log-index
+      description: Rekor transparency log index
+      value: $(tasks.sign-agent-card.results.rekor-log-index)
+    - name: verification-status
+      description: Verification result
+      value: $(tasks.verify-agent-card.results.verification-status)
+    - name: agent-name
+      description: Name of the agent
+      value: $(tasks.verify-agent-card.results.agent-name)
+    - name: agent-version
+      description: Version of the agent
+      value: $(tasks.verify-agent-card.results.agent-version)
+
+  finally:
+    - name: cleanup-on-failure
+      taskRef:
+        name: noop
+      when:
+        - input: $(tasks.status)
+          operator: in
+          values: ["Failed"]
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: noop
+spec:
+  steps:
+    - name: noop
+      image: busybox
+      script: |
+        echo "Pipeline completed with status: $1"

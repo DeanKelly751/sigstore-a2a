@@ -1,0 +1,40 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: weather-agent-sign-verify
+  labels:
+    tekton.dev/pipeline: agent-card-sign-verify-deploy
+spec:
+  pipelineRef:
+    name: agent-card-sign-verify-deploy
+  params:
+    - name: agent-card-path
+      value: demo/weather-agent-card.json
+    - name: repository
+      value: "kagenti/weather-agent"
+    - name: staging
+      value: "true"
+    - name: identity-provider
+      value: "https://token.actions.githubusercontent.com"
+    - name: expected-repository
+      value: "kagenti/weather-agent"
+    - name: deploy
+      value: "true"
+    - name: deployment-name
+      value: "weather-agent-card-server"
+    - name: namespace
+      value: "agents"
+  workspaces:
+    - name: shared-workspace
+      volumeClaimTemplate:
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 1Gi
+  taskRunTemplate:
+    podTemplate:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532

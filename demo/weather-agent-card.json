@@ -1,0 +1,95 @@
+{
+  "name": "Weather Agent",
+  "description": "A Kubernetes-deployed weather agent that provides real-time weather data, forecasts, and climate analysis. Inspired by the Kagenti operator demo.",
+  "version": "1.0.0",
+  "url": "http://weather-agent.agents.svc.cluster.local:8080",
+  "provider": {
+    "organization": "Kagenti",
+    "url": "https://github.com/kagenti/kagenti-operator"
+  },
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": false
+  },
+  "supportsAuthenticatedExtendedCard": true,
+  "defaultInputModes": ["text/plain", "application/json"],
+  "defaultOutputModes": ["text/plain", "application/json"],
+  "skills": [
+    {
+      "id": "get-current-weather",
+      "name": "Get Current Weather",
+      "description": "Retrieves current weather conditions for a specified location",
+      "tags": ["weather", "current", "conditions"],
+      "examples": [
+        "What's the weather in San Francisco?",
+        "Get current temperature in Tokyo",
+        "Is it raining in London right now?"
+      ],
+      "inputModes": ["text/plain", "application/json"],
+      "outputModes": ["application/json", "text/plain"],
+      "parameters": [
+        {
+          "name": "location",
+          "type": "string",
+          "description": "City name or coordinates (lat,lon)",
+          "required": true
+        },
+        {
+          "name": "units",
+          "type": "string",
+          "description": "Temperature units: celsius, fahrenheit, or kelvin",
+          "required": false,
+          "default": "celsius"
+        }
+      ]
+    },
+    {
+      "id": "get-forecast",
+      "name": "Get Weather Forecast",
+      "description": "Provides weather forecast for the next 7 days",
+      "tags": ["weather", "forecast", "prediction"],
+      "examples": [
+        "What's the forecast for New York this week?",
+        "Will it rain in Paris tomorrow?",
+        "5-day forecast for Seattle"
+      ],
+      "inputModes": ["text/plain", "application/json"],
+      "outputModes": ["application/json", "text/plain"],
+      "parameters": [
+        {
+          "name": "location",
+          "type": "string",
+          "description": "City name or coordinates",
+          "required": true
+        },
+        {
+          "name": "days",
+          "type": "integer",
+          "description": "Number of forecast days (1-7)",
+          "required": false,
+          "default": 7
+        }
+      ]
+    },
+    {
+      "id": "weather-alerts",
+      "name": "Weather Alerts",
+      "description": "Get active weather alerts and warnings for a region",
+      "tags": ["weather", "alerts", "warnings", "safety"],
+      "examples": [
+        "Are there any weather alerts in Florida?",
+        "Storm warnings for the Bay Area"
+      ],
+      "inputModes": ["text/plain"],
+      "outputModes": ["application/json", "text/plain"],
+      "parameters": [
+        {
+          "name": "region",
+          "type": "string",
+          "description": "Region or state for alert lookup",
+          "required": true
+        }
+      ]
+    }
+  ]
+}

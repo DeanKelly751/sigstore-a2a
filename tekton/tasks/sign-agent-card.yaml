@@ -1,0 +1,148 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: sign-agent-card
+  labels:
+    app.kubernetes.io/version: "0.1.0"
+  annotations:
+    tekton.dev/pipelines.minVersion: "0.50.0"
+    tekton.dev/categories: Security
+    tekton.dev/tags: sigstore, a2a, signing, agent-card
+    tekton.dev/displayName: "Sign A2A Agent Card"
+spec:
+  description: >-
+    Signs an A2A Agent Card using Sigstore keyless signing.
+    Uses SPIFFE/SPIRE or Kubernetes Service Account OIDC for workload identity.
+  params:
+    - name: agent-card-path
+      type: string
+      description: Path to the unsigned agent card JSON file
+      default: "agent-card.json"
+    - name: output-path
+      type: string
+      description: Path for the signed agent card output
+      default: "agent-card.signed.json"
+    - name: repository
+      type: string
+      description: Repository to bind the signature to (e.g., owner/repo)
+      default: ""
+    - name: staging
+      type: string
+      description: Use Sigstore staging environment (true/false)
+      default: "false"
+    - name: include-provenance
+      type: string
+      description: Include SLSA provenance attestation (true/false)
+      default: "true"
+    - name: sigstore-instance
+      type: string
+      description: Custom Sigstore instance URL (for private deployments)
+      default: ""
+  workspaces:
+    - name: source
+      description: Workspace containing the agent card to sign
+    - name: output
+      description: Workspace for the signed agent card output
+  results:
+    - name: signed-card-digest
+      description: SHA256 digest of the signed agent card
+    - name: rekor-log-index
+      description: Rekor transparency log entry index
+    - name: signer-identity
+      description: Identity that signed the agent card
+  stepTemplate:
+    env:
+      - name: HOME
+        value: /tekton/home
+  steps:
+    - name: sign
+      image: quay.io/dekelly/sigstore-a2a:latest
+      workingDir: $(workspaces.source.path)
+      env:
+        # For GKE Workload Identity (Google OIDC)
+        - name: GOOGLE_APPLICATION_CREDENTIALS
+          value: /var/run/secrets/gcp/credentials.json
+        # For AWS IRSA
+        - name: AWS_ROLE_ARN
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['eks.amazonaws.com/role-arn']
+        - name: AWS_WEB_IDENTITY_TOKEN_FILE
+          value: /var/run/secrets/eks.amazonaws.com/serviceaccount/token
+        # For Azure Workload Identity
+        - name: AZURE_FEDERATED_TOKEN_FILE
+          value: /var/run/secrets/azure/tokens/azure-identity-token
+        # Optional: explicit token (if not using ambient)
+        - name: SIGSTORE_ID_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: sigstore-oidc-token
+              key: token
+              optional: true
+      script: |
+        #!/usr/bin/env bash
+        set -euo pipefail
+
+        echo "=== Signing A2A Agent Card ==="
+        echo "Input:  $(params.agent-card-path)"
+        echo "Output: $(params.output-path)"
+
+        # Build sign command
+        SIGN_CMD="sigstore-a2a sign $(params.agent-card-path)"
+        SIGN_CMD="$SIGN_CMD --output $(workspaces.output.path)/$(params.output-path)"
+
+        # Add staging flag if enabled
+        if [ "$(params.staging)" = "true" ]; then
+          SIGN_CMD="$SIGN_CMD --staging"
+          echo "Using Sigstore staging environment"
+        fi
+
+        # Add custom instance if specified
+        if [ -n "$(params.sigstore-instance)" ]; then
+          SIGN_CMD="$SIGN_CMD --instance $(params.sigstore-instance)"
+          echo "Using custom Sigstore instance: $(params.sigstore-instance)"
+        fi
+
+        # Add repository binding if specified
+        if [ -n "$(params.repository)" ]; then
+          SIGN_CMD="$SIGN_CMD --repository $(params.repository)"
+          echo "Repository binding: $(params.repository)"
+        fi
+
+        # Add provenance if enabled
+        if [ "$(params.include-provenance)" = "true" ]; then
+          SIGN_CMD="$SIGN_CMD --provenance"
+          echo "SLSA provenance: enabled"
+        fi
+
+        # Use ambient credentials (SPIFFE/SPIRE or K8s SA token)
+        SIGN_CMD="$SIGN_CMD --use_ambient_credentials"
+
+        echo ""
+        echo "Executing: $SIGN_CMD"
+        echo ""
+
+        # Execute signing
+        eval $SIGN_CMD
+
+        echo ""
+        echo "=== Signing Complete ==="
+
+        # Extract results
+        SIGNED_CARD="$(workspaces.output.path)/$(params.output-path)"
+
+        # Calculate digest
+        DIGEST=$(sha256sum "$SIGNED_CARD" | cut -d' ' -f1)
+        echo -n "$DIGEST" > $(results.signed-card-digest.path)
+        echo "Signed card digest: $DIGEST"
+
+        # Extract Rekor log index from signed card
+        LOG_INDEX=$(jq -r '.attestations.signatureBundle.verificationMaterial.tlogEntries[0].logIndex // "unknown"' "$SIGNED_CARD")
+        echo -n "$LOG_INDEX" > $(results.rekor-log-index.path)
+        echo "Rekor log index: $LOG_INDEX"
+
+        # Extract signer identity (if available in cert)
+        echo -n "workload-identity" > $(results.signer-identity.path)
+
+        echo ""
+        echo "Signed agent card written to: $SIGNED_CARD"

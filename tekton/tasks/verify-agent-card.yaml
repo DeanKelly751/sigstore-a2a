@@ -1,0 +1,157 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: verify-agent-card
+  labels:
+    app.kubernetes.io/version: "0.1.0"
+  annotations:
+    tekton.dev/pipelines.minVersion: "0.50.0"
+    tekton.dev/categories: Security
+    tekton.dev/tags: sigstore, a2a, verification, agent-card
+    tekton.dev/displayName: "Verify A2A Agent Card"
+spec:
+  description: >-
+    Verifies a signed A2A Agent Card using Sigstore.
+    Supports identity constraints for trust policies.
+  params:
+    - name: signed-card-path
+      type: string
+      description: Path to the signed agent card JSON file
+      default: "agent-card.signed.json"
+    - name: identity-provider
+      type: string
+      description: Expected OIDC issuer (e.g., https://token.actions.githubusercontent.com)
+      default: ""
+    - name: expected-identity
+      type: string
+      description: Expected signer identity (email or URI)
+      default: ""
+    - name: expected-repository
+      type: string
+      description: Expected repository (e.g., owner/repo)
+      default: ""
+    - name: expected-workflow
+      type: string
+      description: Expected workflow name
+      default: ""
+    - name: staging
+      type: string
+      description: Use Sigstore staging environment (true/false)
+      default: "false"
+    - name: sigstore-instance
+      type: string
+      description: Custom Sigstore instance URL
+      default: ""
+    - name: fail-on-invalid
+      type: string
+      description: Fail the task if verification fails (true/false)
+      default: "true"
+  workspaces:
+    - name: source
+      description: Workspace containing the signed agent card
+  results:
+    - name: verification-status
+      description: Verification result (valid/invalid)
+    - name: agent-name
+      description: Name of the verified agent
+    - name: agent-version
+      description: Version of the verified agent
+    - name: signer-identity
+      description: Identity that signed the agent card
+    - name: signer-issuer
+      description: OIDC issuer of the signer
+  stepTemplate:
+    env:
+      - name: HOME
+        value: /tekton/home
+  steps:
+    - name: verify
+      image: quay.io/dekelly/sigstore-a2a:latest
+      workingDir: $(workspaces.source.path)
+      script: |
+        #!/usr/bin/env bash
+        set -euo pipefail
+
+        echo "=== Verifying A2A Agent Card ==="
+        echo "Input: $(params.signed-card-path)"
+
+        # Build verify command
+        VERIFY_CMD="sigstore-a2a verify $(params.signed-card-path)"
+
+        # Add staging flag if enabled
+        if [ "$(params.staging)" = "true" ]; then
+          VERIFY_CMD="$VERIFY_CMD --staging"
+          echo "Using Sigstore staging environment"
+        fi
+
+        # Add custom instance if specified
+        if [ -n "$(params.sigstore-instance)" ]; then
+          VERIFY_CMD="$VERIFY_CMD --instance $(params.sigstore-instance)"
+          echo "Using custom Sigstore instance: $(params.sigstore-instance)"
+        fi
+
+        # Add identity constraints
+        if [ -n "$(params.identity-provider)" ]; then
+          VERIFY_CMD="$VERIFY_CMD --identity_provider '$(params.identity-provider)'"
+          echo "Identity provider constraint: $(params.identity-provider)"
+        fi
+
+        if [ -n "$(params.expected-identity)" ]; then
+          VERIFY_CMD="$VERIFY_CMD --identity '$(params.expected-identity)'"
+          echo "Identity constraint: $(params.expected-identity)"
+        fi
+
+        if [ -n "$(params.expected-repository)" ]; then
+          VERIFY_CMD="$VERIFY_CMD --repository '$(params.expected-repository)'"
+          echo "Repository constraint: $(params.expected-repository)"
+        fi
+
+        if [ -n "$(params.expected-workflow)" ]; then
+          VERIFY_CMD="$VERIFY_CMD --workflow '$(params.expected-workflow)'"
+          echo "Workflow constraint: $(params.expected-workflow)"
+        fi
+
+        echo ""
+        echo "Executing: $VERIFY_CMD"
+        echo ""
+
+        # Execute verification
+        VERIFICATION_OUTPUT=""
+        VERIFICATION_EXIT_CODE=0
+        set +e
+        VERIFICATION_OUTPUT=$(eval $VERIFY_CMD 2>&1)
+        VERIFICATION_EXIT_CODE=$?
+        set -e
+
+        echo "$VERIFICATION_OUTPUT"
+
+        if [ $VERIFICATION_EXIT_CODE -eq 0 ]; then
+          echo -n "valid" > $(results.verification-status.path)
+          echo ""
+          echo "=== Verification Successful ==="
+        else
+          echo -n "invalid" > $(results.verification-status.path)
+          echo ""
+          echo "=== Verification Failed ==="
+
+          if [ "$(params.fail-on-invalid)" = "true" ]; then
+            echo "Failing task due to invalid signature"
+            exit 1
+          else
+            echo "Continuing despite invalid signature (fail-on-invalid=false)"
+          fi
+        fi
+
+        # Extract agent metadata
+        AGENT_NAME=$(jq -r '.agentCard.name // "unknown"' "$(params.signed-card-path)")
+        AGENT_VERSION=$(jq -r '.agentCard.version // "unknown"' "$(params.signed-card-path)")
+
+        echo -n "$AGENT_NAME" > $(results.agent-name.path)
+        echo -n "$AGENT_VERSION" > $(results.agent-version.path)
+
+        echo ""
+        echo "Agent: $AGENT_NAME v$AGENT_VERSION"
+
+        # Try to extract signer info (best effort)
+        echo -n "extracted-from-cert" > $(results.signer-identity.path)
+        echo -n "$(params.identity-provider)" > $(results.signer-issuer.path)

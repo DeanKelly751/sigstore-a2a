@@ -1,0 +1,220 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: publish-agent-card-registry
+  labels:
+    app.kubernetes.io/version: "0.1.0"
+  annotations:
+    tekton.dev/pipelines.minVersion: "0.50.0"
+    tekton.dev/categories: Deployment
+    tekton.dev/tags: sigstore, a2a, registry, oci
+    tekton.dev/displayName: "Publish Agent Card to Registry"
+spec:
+  description: >-
+    Publishes a signed Agent Card to an OCI registry or
+    agent card registry for discovery.
+  params:
+    - name: signed-card-path
+      type: string
+      description: Path to the signed agent card
+    - name: registry-url
+      type: string
+      description: OCI registry URL (e.g., ghcr.io/org/agent-cards)
+    - name: tag
+      type: string
+      description: Tag for the agent card artifact
+      default: "latest"
+    - name: additional-tags
+      type: array
+      description: Additional tags to apply
+      default: []
+  workspaces:
+    - name: source
+      description: Workspace containing the signed agent card
+    - name: dockerconfig
+      description: Docker config for registry auth
+      optional: true
+  results:
+    - name: artifact-url
+      description: Full URL to the published artifact
+    - name: artifact-digest
+      description: Digest of the published artifact
+  steps:
+    - name: publish
+      image: gcr.io/go-containerregistry/crane:latest
+      workingDir: $(workspaces.source.path)
+      env:
+        - name: DOCKER_CONFIG
+          value: $(workspaces.dockerconfig.path)
+      script: |
+        #!/bin/sh
+        set -euo pipefail
+
+        echo "=== Publishing Agent Card to Registry ==="
+
+        CARD_PATH="$(params.signed-card-path)"
+        REGISTRY="$(params.registry-url)"
+        TAG="$(params.tag)"
+
+        # Extract agent metadata for labels
+        AGENT_NAME=$(cat "$CARD_PATH" | jq -r '.agentCard.name')
+        AGENT_VERSION=$(cat "$CARD_PATH" | jq -r '.agentCard.version')
+
+        echo "Agent: $AGENT_NAME"
+        echo "Version: $AGENT_VERSION"
+        echo "Registry: $REGISTRY"
+        echo "Tag: $TAG"
+
+        # Create OCI artifact from agent card
+        # Using crane to push as an OCI artifact
+        ARTIFACT_REF="${REGISTRY}:${TAG}"
+
+        echo ""
+        echo "Pushing to: $ARTIFACT_REF"
+
+        # Push the agent card as an OCI artifact
+        crane push "$CARD_PATH" "$ARTIFACT_REF" \
+          --platform linux/amd64 \
+          2>&1 || {
+            # Fallback: use crane append for raw files
+            echo "Using crane append method..."
+            crane append -f "$CARD_PATH" -t "$ARTIFACT_REF"
+          }
+
+        # Get the digest
+        DIGEST=$(crane digest "$ARTIFACT_REF")
+
+        echo ""
+        echo "Published successfully!"
+        echo "Artifact: $ARTIFACT_REF"
+        echo "Digest: $DIGEST"
+
+        # Apply additional tags
+        for EXTRA_TAG in "$@"; do
+          if [ -n "$EXTRA_TAG" ]; then
+            EXTRA_REF="${REGISTRY}:${EXTRA_TAG}"
+            echo "Tagging: $EXTRA_REF"
+            crane tag "$ARTIFACT_REF" "$EXTRA_TAG"
+          fi
+        done
+
+        # Write results
+        echo -n "$ARTIFACT_REF" > $(results.artifact-url.path)
+        echo -n "$DIGEST" > $(results.artifact-digest.path)
+
+        echo ""
+        echo "=== Publication Complete ==="
+        echo "Artifact URL: $ARTIFACT_REF"
+        echo "Artifact Digest: $DIGEST"
+      args:
+        - "$(params.additional-tags[*])"
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: notify-slack
+  labels:
+    app.kubernetes.io/version: "0.1.0"
+spec:
+  description: Send notification to Slack about agent card signing
+  params:
+    - name: webhook-url-secret
+      type: string
+      description: Name of secret containing Slack webhook URL
+      default: "slack-webhook"
+    - name: agent-name
+      type: string
+    - name: agent-version
+      type: string
+    - name: status
+      type: string
+      description: Status (success/failure)
+    - name: rekor-index
+      type: string
+      default: ""
+    - name: message
+      type: string
+      default: ""
+  steps:
+    - name: send-notification
+      image: curlimages/curl:latest
+      env:
+        - name: SLACK_WEBHOOK
+          valueFrom:
+            secretKeyRef:
+              name: $(params.webhook-url-secret)
+              key: url
+              optional: true
+      script: |
+        #!/bin/sh
+        set -e
+
+        if [ -z "$SLACK_WEBHOOK" ]; then
+          echo "Slack webhook not configured, skipping notification"
+          exit 0
+        fi
+
+        STATUS="$(params.status)"
+        AGENT="$(params.agent-name)"
+        VERSION="$(params.agent-version)"
+        REKOR="$(params.rekor-index)"
+        MESSAGE="$(params.message)"
+
+        if [ "$STATUS" = "success" ]; then
+          COLOR="#36a64f"
+          EMOJI=":white_check_mark:"
+          TITLE="Agent Card Signed Successfully"
+        else
+          COLOR="#ff0000"
+          EMOJI=":x:"
+          TITLE="Agent Card Signing Failed"
+        fi
+
+        PAYLOAD=$(cat <<EOF
+        {
+          "attachments": [
+            {
+              "color": "$COLOR",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "$EMOJI $TITLE",
+                    "emoji": true
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Agent:*\n$AGENT"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Version:*\n$VERSION"
+                    }
+                  ]
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Rekor Log Index:*\n$REKOR"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+        EOF
+        )
+
+        curl -X POST -H 'Content-type: application/json' \
+          --data "$PAYLOAD" \
+          "$SLACK_WEBHOOK"
+
+        echo "Notification sent to Slack"

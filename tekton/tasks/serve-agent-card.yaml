@@ -1,0 +1,148 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: serve-agent-card
+  labels:
+    app.kubernetes.io/version: "0.1.0"
+  annotations:
+    tekton.dev/pipelines.minVersion: "0.50.0"
+    tekton.dev/categories: Deployment
+    tekton.dev/tags: sigstore, a2a, serving, agent-card
+    tekton.dev/displayName: "Deploy Agent Card Server"
+spec:
+  description: >-
+    Deploys a signed Agent Card to a Kubernetes deployment
+    serving it at well-known A2A endpoints.
+  params:
+    - name: signed-card-path
+      type: string
+      description: Path to the signed agent card
+      default: "agent-card.signed.json"
+    - name: deployment-name
+      type: string
+      description: Name for the agent card server deployment
+      default: "agent-card-server"
+    - name: namespace
+      type: string
+      description: Kubernetes namespace for deployment
+      default: "default"
+    - name: port
+      type: string
+      description: Port to expose the agent card server
+      default: "8080"
+    - name: replicas
+      type: string
+      description: Number of replicas
+      default: "1"
+  workspaces:
+    - name: source
+      description: Workspace containing the signed agent card
+  results:
+    - name: service-url
+      description: URL where the agent card is served
+    - name: deployment-name
+      description: Name of the created deployment
+  steps:
+    - name: create-configmap
+      image: bitnami/kubectl:latest
+      workingDir: $(workspaces.source.path)
+      script: |
+        #!/bin/bash
+        set -euo pipefail
+
+        echo "=== Creating ConfigMap for Agent Card ==="
+
+        # Create ConfigMap from signed agent card
+        kubectl create configmap $(params.deployment-name)-card \
+          --from-file=agent-card.signed.json=$(params.signed-card-path) \
+          --namespace $(params.namespace) \
+          --dry-run=client -o yaml | kubectl apply -f -
+
+        echo "ConfigMap created: $(params.deployment-name)-card"
+
+    - name: deploy-server
+      image: bitnami/kubectl:latest
+      script: |
+        #!/bin/bash
+        set -euo pipefail
+
+        echo "=== Deploying Agent Card Server ==="
+
+        cat <<EOF | kubectl apply -f -
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: $(params.deployment-name)
+          namespace: $(params.namespace)
+          labels:
+            app: $(params.deployment-name)
+            app.kubernetes.io/component: agent-card-server
+        spec:
+          replicas: $(params.replicas)
+          selector:
+            matchLabels:
+              app: $(params.deployment-name)
+          template:
+            metadata:
+              labels:
+                app: $(params.deployment-name)
+            spec:
+              containers:
+              - name: server
+                image: quay.io/dekelly/sigstore-a2a:latest
+                command: ["sigstore-a2a"]
+                args:
+                  - "serve"
+                  - "/data/agent-card.signed.json"
+                  - "--host"
+                  - "0.0.0.0"
+                  - "--port"
+                  - "8080"
+                ports:
+                - containerPort: $(params.port)
+                  name: http
+                volumeMounts:
+                - name: agent-card
+                  mountPath: /data
+                  readOnly: true
+                livenessProbe:
+                  httpGet:
+                    path: /health
+                    port: $(params.port)
+                  initialDelaySeconds: 5
+                  periodSeconds: 10
+                readinessProbe:
+                  httpGet:
+                    path: /health
+                    port: $(params.port)
+                  initialDelaySeconds: 3
+                  periodSeconds: 5
+              volumes:
+              - name: agent-card
+                configMap:
+                  name: $(params.deployment-name)-card
+        ---
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: $(params.deployment-name)
+          namespace: $(params.namespace)
+        spec:
+          selector:
+            app: $(params.deployment-name)
+          ports:
+          - port: 80
+            targetPort: $(params.port)
+            name: http
+        EOF
+
+        echo "Deployment created: $(params.deployment-name)"
+
+        # Write results
+        echo -n "http://$(params.deployment-name).$(params.namespace).svc.cluster.local/.well-known/agent.json" > $(results.service-url.path)
+        echo -n "$(params.deployment-name)" > $(results.deployment-name.path)
+
+        echo ""
+        echo "Agent Card available at:"
+        echo "  - http://$(params.deployment-name).$(params.namespace).svc.cluster.local/.well-known/agent.json"
+        echo "  - http://$(params.deployment-name).$(params.namespace).svc.cluster.local/.well-known/agent.signed.json"

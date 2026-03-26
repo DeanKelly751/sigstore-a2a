@@ -1,0 +1,269 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: agent-card-full-lifecycle
+  labels:
+    app.kubernetes.io/version: "0.1.0"
+  annotations:
+    tekton.dev/displayName: "Full Agent Card Lifecycle"
+    tekton.dev/description: |
+      Enterprise-grade pipeline with all features:
+      1. Sign with Sigstore
+      2. Verify signature
+      3. Policy enforcement
+      4. Deploy to Kubernetes
+      5. Publish to OCI registry
+      6. Slack notifications
+spec:
+  description: >-
+    Complete enterprise pipeline for A2A Agent Card lifecycle management
+    including signing, verification, policy checks, deployment, and notifications.
+  params:
+    # Source params
+    - name: git-url
+      type: string
+      description: Git repository URL
+    - name: git-revision
+      type: string
+      description: Git revision
+      default: "main"
+    - name: agent-card-path
+      type: string
+      description: Path to agent card in repo
+      default: "agent-card.json"
+
+    # Signing params
+    - name: repository
+      type: string
+      description: Repository for signature binding
+    - name: staging
+      type: string
+      default: "false"
+
+    # Verification params
+    - name: identity-provider
+      type: string
+      description: Expected OIDC issuer
+    - name: expected-repository
+      type: string
+      description: Expected repository constraint
+
+    # Policy params
+    - name: policy-config
+      type: string
+      description: JSON policy configuration
+      default: "{}"
+    - name: enforce-policy
+      type: string
+      default: "true"
+
+    # Deployment params
+    - name: deploy
+      type: string
+      default: "true"
+    - name: deployment-name
+      type: string
+    - name: namespace
+      type: string
+      default: "default"
+
+    # Registry params
+    - name: publish-to-registry
+      type: string
+      default: "false"
+    - name: registry-url
+      type: string
+      default: ""
+
+    # Notification params
+    - name: notify-slack
+      type: string
+      default: "false"
+
+  workspaces:
+    - name: shared-workspace
+    - name: git-credentials
+      optional: true
+    - name: docker-credentials
+      optional: true
+
+  tasks:
+    # Step 1: Clone repository
+    - name: git-clone
+      taskRef:
+        name: git-clone
+        kind: ClusterTask
+      params:
+        - name: url
+          value: $(params.git-url)
+        - name: revision
+          value: $(params.git-revision)
+      workspaces:
+        - name: output
+          workspace: shared-workspace
+        - name: ssh-directory
+          workspace: git-credentials
+
+    # Step 2: Sign the agent card
+    - name: sign
+      taskRef:
+        name: sign-agent-card
+      runAfter:
+        - git-clone
+      params:
+        - name: agent-card-path
+          value: $(params.agent-card-path)
+        - name: output-path
+          value: agent-card.signed.json
+        - name: repository
+          value: $(params.repository)
+        - name: staging
+          value: $(params.staging)
+        - name: include-provenance
+          value: "true"
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+        - name: output
+          workspace: shared-workspace
+
+    # Step 3: Verify the signature
+    - name: verify
+      taskRef:
+        name: verify-agent-card
+      runAfter:
+        - sign
+      params:
+        - name: signed-card-path
+          value: agent-card.signed.json
+        - name: identity-provider
+          value: $(params.identity-provider)
+        - name: expected-repository
+          value: $(params.expected-repository)
+        - name: staging
+          value: $(params.staging)
+        - name: fail-on-invalid
+          value: "true"
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+
+    # Step 4: Policy check
+    - name: policy-check
+      taskRef:
+        name: agent-card-policy-check
+      runAfter:
+        - verify
+      when:
+        - input: $(params.enforce-policy)
+          operator: in
+          values: ["true"]
+      params:
+        - name: signed-card-path
+          value: agent-card.signed.json
+        - name: policy-config
+          value: $(params.policy-config)
+        - name: strict-mode
+          value: "true"
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+
+    # Step 5: Deploy to Kubernetes
+    - name: deploy
+      taskRef:
+        name: serve-agent-card
+      runAfter:
+        - policy-check
+      when:
+        - input: $(params.deploy)
+          operator: in
+          values: ["true"]
+      params:
+        - name: signed-card-path
+          value: agent-card.signed.json
+        - name: deployment-name
+          value: $(params.deployment-name)
+        - name: namespace
+          value: $(params.namespace)
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+
+    # Step 6: Publish to registry
+    - name: publish
+      taskRef:
+        name: publish-agent-card-registry
+      runAfter:
+        - verify
+      when:
+        - input: $(params.publish-to-registry)
+          operator: in
+          values: ["true"]
+      params:
+        - name: signed-card-path
+          value: agent-card.signed.json
+        - name: registry-url
+          value: $(params.registry-url)
+        - name: tag
+          value: $(tasks.verify.results.agent-version)
+        - name: additional-tags
+          value:
+            - "latest"
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+        - name: dockerconfig
+          workspace: docker-credentials
+
+  finally:
+    # Notify on completion
+    - name: notify-success
+      taskRef:
+        name: notify-slack
+      when:
+        - input: $(params.notify-slack)
+          operator: in
+          values: ["true"]
+        - input: $(tasks.status)
+          operator: in
+          values: ["Succeeded"]
+      params:
+        - name: agent-name
+          value: $(tasks.verify.results.agent-name)
+        - name: agent-version
+          value: $(tasks.verify.results.agent-version)
+        - name: status
+          value: "success"
+        - name: rekor-index
+          value: $(tasks.sign.results.rekor-log-index)
+
+    - name: notify-failure
+      taskRef:
+        name: notify-slack
+      when:
+        - input: $(params.notify-slack)
+          operator: in
+          values: ["true"]
+        - input: $(tasks.status)
+          operator: in
+          values: ["Failed"]
+      params:
+        - name: agent-name
+          value: "unknown"
+        - name: agent-version
+          value: "unknown"
+        - name: status
+          value: "failure"
+
+  results:
+    - name: signed-card-digest
+      value: $(tasks.sign.results.signed-card-digest)
+    - name: rekor-log-index
+      value: $(tasks.sign.results.rekor-log-index)
+    - name: verification-status
+      value: $(tasks.verify.results.verification-status)
+    - name: agent-name
+      value: $(tasks.verify.results.agent-name)
+    - name: agent-version
+      value: $(tasks.verify.results.agent-version)

@@ -1,0 +1,29 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: verify-external-agent
+  labels:
+    tekton.dev/pipeline: agent-card-verify-only
+spec:
+  pipelineRef:
+    name: agent-card-verify-only
+  params:
+    - name: signed-card-url
+      value: "https://example-agent.com/.well-known/agent.signed.json"
+    - name: identity-provider
+      value: "https://token.actions.githubusercontent.com"
+    - name: expected-repository
+      value: "trusted-org/trusted-agent"
+    - name: expected-workflow
+      value: "Release"
+    - name: staging
+      value: "false"
+  workspaces:
+    - name: shared-workspace
+      volumeClaimTemplate:
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 100Mi

@@ -1,0 +1,240 @@
+# ============================================================================
+# AMBIENT CREDENTIALS SETUP FOR SIGSTORE KEYLESS SIGNING
+# ============================================================================
+# 
+# sigstore-a2a uses --use_ambient_credentials to automatically detect OIDC
+# tokens from the environment. This works with:
+#
+#   1. GitHub Actions OIDC
+#   2. Google Cloud Workload Identity (GKE)
+#   3. AWS IAM Roles for Service Accounts (EKS)
+#   4. Azure Workload Identity (AKS)
+#   5. SPIFFE/SPIRE
+#
+# The token is exchanged with Sigstore's Fulcio CA for a short-lived
+# signing certificate. NO PRIVATE KEYS NEEDED!
+# ============================================================================
+
+---
+# ============================================================================
+# OPTION 1: GKE WORKLOAD IDENTITY (Google OIDC)
+# ============================================================================
+# 
+# Prerequisites:
+#   1. Enable Workload Identity on your GKE cluster
+#   2. Create a Google Service Account
+#   3. Bind the Kubernetes SA to the Google SA
+#
+# The OIDC token from Google is automatically available and Sigstore
+# accepts tokens from https://accounts.google.com
+# ============================================================================
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sigstore-signer-gke
+  namespace: tekton-pipelines
+  annotations:
+    # Bind to Google Service Account
+    iam.gke.io/gcp-service-account: sigstore-signer@YOUR_PROJECT.iam.gserviceaccount.com
+---
+# Grant the Google SA permission to get OIDC tokens
+# Run: gcloud iam service-accounts add-iam-policy-binding \
+#        sigstore-signer@YOUR_PROJECT.iam.gserviceaccount.com \
+#        --role roles/iam.workloadIdentityUser \
+#        --member "serviceAccount:YOUR_PROJECT.svc.id.goog[tekton-pipelines/sigstore-signer-gke]"
+
+---
+# ============================================================================
+# OPTION 2: EKS IRSA (AWS OIDC)
+# ============================================================================
+#
+# Prerequisites:
+#   1. Enable IRSA on your EKS cluster
+#   2. Create an IAM role with OIDC trust policy
+#   3. Annotate the ServiceAccount with the role ARN
+#
+# Sigstore accepts tokens from the EKS OIDC provider
+# ============================================================================
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sigstore-signer-eks
+  namespace: tekton-pipelines
+  annotations:
+    # Bind to AWS IAM Role
+    eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/sigstore-signer-role
+---
+# IAM Trust Policy for the role:
+# {
+#   "Version": "2012-10-17",
+#   "Statement": [{
+#     "Effect": "Allow",
+#     "Principal": {
+#       "Federated": "arn:aws:iam::123456789012:oidc-provider/oidc.eks.region.amazonaws.com/id/EXAMPLED539D4633E53DE1B71EXAMPLE"
+#     },
+#     "Action": "sts:AssumeRoleWithWebIdentity",
+#     "Condition": {
+#       "StringEquals": {
+#         "oidc.eks.region.amazonaws.com/id/EXAMPLED539D4633E53DE1B71EXAMPLE:sub": "system:serviceaccount:tekton-pipelines:sigstore-signer-eks"
+#       }
+#     }
+#   }]
+# }
+
+---
+# ============================================================================
+# OPTION 3: AZURE WORKLOAD IDENTITY
+# ============================================================================
+#
+# Prerequisites:
+#   1. Enable Workload Identity on AKS
+#   2. Create an Azure AD application
+#   3. Create federated credential
+#
+# Sigstore accepts tokens from Azure AD
+# ============================================================================
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sigstore-signer-aks
+  namespace: tekton-pipelines
+  annotations:
+    azure.workload.identity/client-id: YOUR_APP_CLIENT_ID
+  labels:
+    azure.workload.identity/use: "true"
+
+---
+# ============================================================================
+# OPTION 4: SPIFFE/SPIRE
+# ============================================================================
+#
+# For on-prem or multi-cloud, SPIFFE/SPIRE provides workload identity.
+# Sigstore can accept SPIFFE SVIDs as identity tokens.
+#
+# Prerequisites:
+#   1. Deploy SPIRE server and agents
+#   2. Register workloads with SPIRE
+#   3. Configure Sigstore to accept your SPIFFE trust domain
+# ============================================================================
+
+apiVersion: spire.spiffe.io/v1alpha1
+kind: ClusterSPIFFEID
+metadata:
+  name: tekton-sigstore-signer
+spec:
+  spiffeIDTemplate: "spiffe://example.org/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}"
+  podSelector:
+    matchLabels:
+      tekton.dev/task: sign-agent-card
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: tekton-pipelines
+
+---
+# ============================================================================
+# OPTION 5: GITHUB ACTIONS (for Tekton triggered by GitHub)
+# ============================================================================
+#
+# If your Tekton pipeline is triggered FROM GitHub Actions, you can pass
+# the GitHub OIDC token to the pipeline.
+#
+# In your GitHub Actions workflow:
+#
+#   - name: Get OIDC Token
+#     id: oidc
+#     run: |
+#       TOKEN=$(curl -sLS "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sigstore" \
+#         -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}")
+#       echo "token=$(echo $TOKEN | jq -r '.value')" >> $GITHUB_OUTPUT
+#
+#   - name: Trigger Tekton Pipeline
+#     run: |
+#       tkn pipeline start agent-card-sign-verify-deploy \
+#         --param identity-token=${{ steps.oidc.outputs.token }} \
+#         ...
+# ============================================================================
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: github-oidc-token
+  namespace: tekton-pipelines
+type: Opaque
+stringData:
+  # This would be populated by your GitHub Actions workflow
+  token: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
+
+---
+# ============================================================================
+# EXAMPLE: PipelineRun with GKE Workload Identity
+# ============================================================================
+
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: sign-with-google-identity
+  namespace: tekton-pipelines
+spec:
+  pipelineRef:
+    name: agent-card-sign-verify-deploy
+  params:
+    - name: agent-card-path
+      value: agent-card.json
+    - name: staging
+      value: "false"
+    - name: repository
+      value: "myorg/myagent"
+    # For Google OIDC, the identity provider is:
+    - name: identity-provider
+      value: "https://accounts.google.com"
+    - name: deploy
+      value: "true"
+  workspaces:
+    - name: shared-workspace
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 1Gi
+  taskRunTemplate:
+    serviceAccountName: sigstore-signer-gke  # Uses GKE Workload Identity
+
+---
+# ============================================================================
+# EXAMPLE: PipelineRun with AWS IRSA
+# ============================================================================
+
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: sign-with-aws-identity
+  namespace: tekton-pipelines
+spec:
+  pipelineRef:
+    name: agent-card-sign-verify-deploy
+  params:
+    - name: agent-card-path
+      value: agent-card.json
+    - name: staging
+      value: "false"
+    - name: repository
+      value: "myorg/myagent"
+    # For AWS OIDC via EKS:
+    - name: identity-provider
+      value: "https://oidc.eks.us-west-2.amazonaws.com/id/EXAMPLED539D4633E53DE1B71EXAMPLE"
+    - name: deploy
+      value: "true"
+  workspaces:
+    - name: shared-workspace
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 1Gi
+  taskRunTemplate:
+    serviceAccountName: sigstore-signer-eks  # Uses AWS IRSA
